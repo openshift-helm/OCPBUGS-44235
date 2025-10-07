@@ -1,0 +1,12 @@
+# SSH Key - Share via Slack, not in git
+helm-test-2.pem
+*.pem
+
+# Generated work files - created by verify-helm-ca-bug.sh
+work/
+
+# Backup files
+*.bak
+
+# macOS
+.DS_Store
