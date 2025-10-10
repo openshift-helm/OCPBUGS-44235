@@ -11,7 +11,78 @@ error locating chart: open /.cache/helm/repository/<hash>-index.yaml: no such fi
 
 ---
 
-## Quick Reproduction Steps
+## Using the Automation Script
+
+The `verify-helm-ca-bug.sh` script automates the entire setup. This is useful when you need to recreate the environment (e.g., new EC2 instance).
+
+### Prerequisites
+
+1. **EC2 Instance** - Debian/Ubuntu server with public IP
+2. **SSH Access** - SSH key file named `helm-test-2.pem` in this directory
+3. **OpenShift Cluster** - Logged in via `oc` CLI
+
+### Quick Start with New EC2 Instance
+
+1. **Update the EC2 IP in the script:**
+```bash
+# Edit verify-helm-ca-bug.sh
+# Update line 27 with your new EC2 IP:
+EC2_IP="YOUR.NEW.EC2.IP"
+```
+
+2. **Place your SSH key:**
+```bash
+# Copy your SSH key to this directory
+cp /path/to/your-key.pem helm-test-2.pem
+chmod 400 helm-test-2.pem
+```
+
+3. **Run full setup:**
+```bash
+./verify-helm-ca-bug.sh full
+```
+
+This will:
+- Install nginx on EC2
+- Generate self-signed SSL certificate
+- Create and publish a Helm chart
+- Extract CA certificate
+- Configure OpenShift namespace and Helm repository with CA
+- Show you how to test the bug
+
+### Script Commands
+
+```bash
+./verify-helm-ca-bug.sh full          # Complete setup (EC2 + OCP)
+./verify-helm-ca-bug.sh ec2           # Setup EC2 nginx + certificate only
+./verify-helm-ca-bug.sh chart         # Create and publish Helm chart only
+./verify-helm-ca-bug.sh ocp           # Setup OpenShift repo with CA only
+./verify-helm-ca-bug.sh cli           # Verify with Helm CLI
+./verify-helm-ca-bug.sh cleanup       # Remove demo resources
+./verify-helm-ca-bug.sh help          # Show menu
+```
+
+### What Gets Created
+
+**On EC2:**
+- nginx web server with HTTPS
+- Self-signed SSL certificate for your domain
+- Helm chart repository with `index.yaml` and `hello-helm-0.1.0.tgz`
+
+**On OpenShift:**
+- Namespace: `helm-lab`
+- ConfigMap: `charts-ca` (contains CA certificate)
+- ProjectHelmChartRepository: `lab-repo` (configured with CA)
+
+**Locally:**
+- `charts-ca-bundle.crt` - CA certificate extracted from EC2
+- `work/` directory - temporary files (gitignored)
+
+---
+
+## Manual Reproduction Steps (Without Script)
+
+If you prefer to set up manually or don't have an EC2 instance:
 
 ### 1. Set Up Test HTTPS Helm Repository
 
