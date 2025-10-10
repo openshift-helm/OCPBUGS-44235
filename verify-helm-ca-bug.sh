@@ -19,12 +19,12 @@ set -e  # Exit on error
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Helm repository domain (change this in one place)
-CHART_DOMAIN="16-170-141-85.nip.io"
+CHART_DOMAIN="13-53-124-248.nip.io"
 
 # EC2 connection details
 # NOTE: AWS machine gets deleted daily, update EC2_IP each day
 EC2_SSH_KEY="${SCRIPT_DIR}/helm-test-2.pem"
-EC2_IP="16.170.141.85"
+EC2_IP="13.53.124.248"
 EC2_USER="admin"
 EC2_HOST="${EC2_USER}@${EC2_IP}"
 
