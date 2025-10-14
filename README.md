@@ -2,122 +2,83 @@
 
 ## Bug Description
 
-When CA certificates are configured on `HelmChartRepository` or `ProjectHelmChartRepository`, Helm chart installation fails with:
+Helm chart installation fails when CA certificates or client TLS certificates are configured on `HelmChartRepository` or `ProjectHelmChartRepository`:
+
 ```
 error locating chart: open /.cache/helm/repository/<hash>-index.yaml: no such file or directory
 ```
 
-**Affected Versions:** OCP 4.14, 4.15, 4.16+
+Browsing charts works. Installing fails.
+
+**Affected:** OCP 4.14, 4.15, 4.16+
 
 ---
 
-## Using the Automation Script
+## Manual Reproduction Steps
 
-The `verify-helm-ca-bug.sh` script automates the entire setup. This is useful when you need to recreate the environment (e.g., new EC2 instance).
+### 1. Create HTTPS Helm Repository
 
-### Prerequisites
-
-1. **EC2 Instance** - Debian/Ubuntu server with public IP
-2. **SSH Access** - SSH key file named `helm-test-2.pem` in this directory
-3. **OpenShift Cluster** - Logged in via `oc` CLI
-
-### Quick Start with New EC2 Instance
-
-1. **Update the EC2 IP in the script:**
-```bash
-# Edit verify-helm-ca-bug.sh
-# Update line 27 with your new EC2 IP:
-EC2_IP="YOUR.NEW.EC2.IP"
-```
-
-2. **Place your SSH key:**
-```bash
-# Copy your SSH key to this directory
-cp /path/to/your-key.pem helm-test-2.pem
-chmod 400 helm-test-2.pem
-```
-
-3. **Run full setup:**
-```bash
-./verify-helm-ca-bug.sh full
-```
-
-This will:
-- Install nginx on EC2
-- Generate self-signed SSL certificate
-- Create and publish a Helm chart
-- Extract CA certificate
-- Configure OpenShift namespace and Helm repository with CA
-- Show you how to test the bug
-
-### Script Commands
+On a server (Debian/Ubuntu):
 
 ```bash
-./verify-helm-ca-bug.sh full          # Complete setup (EC2 + OCP)
-./verify-helm-ca-bug.sh ec2           # Setup EC2 nginx + certificate only
-./verify-helm-ca-bug.sh chart         # Create and publish Helm chart only
-./verify-helm-ca-bug.sh ocp           # Setup OpenShift repo with CA only
-./verify-helm-ca-bug.sh cli           # Verify with Helm CLI
-./verify-helm-ca-bug.sh cleanup       # Remove demo resources
-./verify-helm-ca-bug.sh help          # Show menu
-```
-
-### What Gets Created
-
-**On EC2:**
-- nginx web server with HTTPS
-- Self-signed SSL certificate for your domain
-- Helm chart repository with `index.yaml` and `hello-helm-0.1.0.tgz`
-
-**On OpenShift:**
-- Namespace: `helm-lab`
-- ConfigMap: `charts-ca` (contains CA certificate)
-- ProjectHelmChartRepository: `lab-repo` (configured with CA)
-
-**Locally:**
-- `charts-ca-bundle.crt` - CA certificate extracted from EC2
-- `work/` directory - temporary files (gitignored)
-
----
-
-## Manual Reproduction Steps (Without Script)
-
-If you prefer to set up manually or don't have an EC2 instance:
-
-### 1. Set Up Test HTTPS Helm Repository
-
-Create any HTTPS Helm repository with a self-signed certificate. Example:
-
-```bash
-# On a server (Ubuntu/Debian):
+# Install nginx
 sudo apt-get install -y nginx
 
-# Generate self-signed cert
-openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+# Generate self-signed certificate
+sudo openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
   -keyout /etc/ssl/private/helm-repo.key \
   -out /etc/ssl/certs/helm-repo.crt \
   -subj "/CN=your-domain.com"
 
 # Configure nginx for HTTPS
-# Create Helm repository with index.yaml and chart files
-# Restart nginx
+sudo tee /etc/nginx/sites-available/helm-repo <<'EOF'
+server {
+    listen 443 ssl;
+    server_name your-domain.com;
+    ssl_certificate /etc/ssl/certs/helm-repo.crt;
+    ssl_certificate_key /etc/ssl/private/helm-repo.key;
+    root /var/www/helm;
+    location / {
+        autoindex on;
+    }
+}
+EOF
+
+sudo ln -s /etc/nginx/sites-available/helm-repo /etc/nginx/sites-enabled/
+sudo mkdir -p /var/www/helm
+sudo nginx -t && sudo systemctl reload nginx
 ```
 
-### 2. Configure On OpenShift Cluster
+### 2. Create and Publish Helm Chart
 
 ```bash
-# Create namespace
-oc create namespace helm-lab
+# Create chart
+helm create hello-helm
 
-# Create CA certificate ConfigMap
-# Extract CA from your HTTPS server:
+# Package chart
+helm package hello-helm
+
+# Generate repository index
+helm repo index . --url https://your-domain.com/
+
+# Publish to nginx
+sudo mv hello-helm-*.tgz index.yaml /var/www/helm/
+```
+
+### 3. Configure on OpenShift
+
+```bash
+# Extract CA certificate from server
 openssl s_client -connect your-domain.com:443 -showcerts </dev/null 2>/dev/null | \
   openssl x509 -outform PEM > ca-cert.crt
 
-# Create ConfigMap
+# Create namespace
+oc create namespace helm-lab
+
+# Create CA ConfigMap
 oc create configmap charts-ca -n helm-lab --from-file=ca-bundle.crt=ca-cert.crt
 
-# Create ProjectHelmChartRepository with CA
+# Create Helm repository with CA
 cat <<EOF | oc apply -f -
 apiVersion: helm.openshift.io/v1beta1
 kind: ProjectHelmChartRepository
@@ -125,7 +86,6 @@ metadata:
   name: test-repo
   namespace: helm-lab
 spec:
-  name: Test Repo
   connectionConfig:
     url: https://your-domain.com/
     ca:
@@ -133,103 +93,29 @@ spec:
 EOF
 ```
 
-### 3. Reproduce Bug in Console UI
+### 4. Reproduce Bug
 
-1. Open OpenShift Console
-2. Switch to **Developer** perspective
-3. Select namespace: **helm-lab**
-4. Go to: **+Add** → **Helm Chart**
-5. **Browse works** ✅ - You see charts from "Test Repo"
-6. **Click on any chart** → **Bug appears** ❌
+**In Console UI:**
+1. Developer → Project: helm-lab → +Add → Helm Chart
+2. Browse works (charts visible)
+3. Click on chart → Error appears
 
-**Error:**
-```
-The Helm Chart is currently unavailable. r: Failed to retrieve chart: 
-error locating chart: looks like "https://..." is not a valid chart 
-repository or cannot be reached: open /.cache/helm/repository/...
-no such file or directory
-```
-
-### 4. Verify Helm CLI Works (Comparison)
-
+**Via Helm CLI (for comparison):**
 ```bash
 helm repo add test https://your-domain.com/ --ca-file ca-cert.crt
-helm install demo test/chart-name -n helm-lab
-# ✅ Works - CLI creates cache before installing
+helm install demo test/hello-helm -n helm-lab
+# Works correctly
 ```
 
 ---
 
 ## Root Cause
 
-The console code sets `chartPathOptions.RepoURL` when CA is configured. This forces Helm into repository mode, which requires cache at `$HOME/.cache/helm/repository/`.
-
-Console pods have:
-- `HOME=/` (read-only root filesystem)
-- No `HELM_CACHE_HOME` environment variable
-- No repository cache (console never runs `helm repo add`)
-
-Result: Helm cannot find/create cache → installation fails.
+Console uses Kubernetes CRDs to store repository configuration, not Helm's repository cache. Setting `chartPathOptions.RepoURL` during authentication forced Helm to look for `$HOME/.cache/helm/repository/` which doesn't exist in read-only pod filesystems.
 
 ---
 
-## The Fix
+## Additional Resources
 
-**File:** `pkg/helm/actions/auth.go` (2 places)
-
-Remove the `RepoURL` assignment:
-```diff
-  if connectionConfig.CA != (configv1.ConfigMapNameReference{}) {
--     chartPathOptions.RepoURL = connectionConfig.URL
-      caFile, err := setupCaCertFile(...)
-      chartPathOptions.CaFile = caFile.Name()
-  }
-```
-
-**Files:** `get_chart.go`, `install_chart.go`, `upgrade_release.go` (5 places total)
-
-Always use full URL:
-```diff
-- if len(tlsFiles) == 0 {
--     chartLocation = url
-- } else {
--     chartLocation = chartInfo.Name
-- }
-+ chartLocation = url
-```
-
-**Result:** Helm uses direct download mode with CA verification, no cache needed.
-
----
-
-## Local Reproduction (For Developers)
-
-The bug can be reproduced locally using the script in the console repository:
-
-```bash
-# In console repository (checkout https://github.com/martinszuc/console/commits/ocpbugs-44235-reproduction/)
-git checkout ocpbugs-44235-reproduction
-
-# Run bridge with constrained environment
-./run-bridge-readonly-home.sh
-
-# Test at http://localhost:9000
-```
-
-**Critical:** The script does NOT set `HELM_CACHE_HOME` or `HELM_CONFIG_HOME` - this is required to reproduce the bug!
-
----
-
-## Files
-
-- This repository: Documentation and test server setup instructions
-- Console repository (`ocpbugs-44235-reproduction` branch): Fix + reproduction script
-
----
-
-## Status
-
-- ✅ Bug reproduced on OCP 4.16.49
-- ✅ Bug reproduced locally with read-only HOME
-- ✅ Fix implemented and verified working
-- ✅ Ready for PR to openshift/console
+- Automated setup script: `verify-helm-ca-bug.sh` (requires EC2 instance)
+- Issue: https://issues.redhat.com/browse/OCPBUGS-44235
