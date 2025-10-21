@@ -34,11 +34,12 @@ echo "✅ Basic auth file created at /etc/nginx/auth/helm.htpasswd"
 # ============================================
 # 3. Generate self-signed SSL certificate
 # ============================================
-echo "🔒 Generating self-signed SSL certificate..."
+echo "🔒 Generating self-signed SSL certificate"
 sudo openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
   -keyout /etc/ssl/private/helm-repo.key \
   -out /etc/ssl/certs/helm-repo.crt \
-  -subj "/CN=${DOMAIN}/O=Helm Testing/C=US"
+  -subj "/CN=${DOMAIN}/O=Helm Testing/C=US" \
+  -addext "subjectAltName=IP:${DOMAIN}"
 
 echo "✅ SSL certificate created"
 
