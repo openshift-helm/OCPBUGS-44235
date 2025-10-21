@@ -1,13 +1,55 @@
-# SSH Key - Share via Slack, not in git
-helm-test-2.pem
-*.pem
-
-# Generated work files - created by verify-helm-ca-bug.sh
-work/
-
-# Backup files
-*.bak
-
-# macOS
+# OS Files
 .DS_Store
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.log
+*.swp
+*~
+
+# Generated artifacts
+work/
+*.tgz
+*.pem
+*.crt
+*.key
+*.csr
+ca-bundle.crt
+charts-ca-bundle.crt
+
+# OpenShift/Kubernetes
+kubeconfig
+*.kubeconfig
+
+# EC2/AWS
+*.pem
+*.ppk
+ec2-keypair*
+
+# Generated YAML (usually in /tmp, but just in case)
+*-setup.yaml
+*-config.yaml
+
+# Helm
+.helm/
+Chart.lock
+
+# IDE
+.vscode/
 .idea/
+*.iml
+
+# Python (if we add any)
+__pycache__/
+*.py[cod]
+venv/
+.venv/
+
+# Node (if we add any)
+node_modules/
+package-lock.json
+
+# Keep example files
+!example-*.yaml
+!sample-*.yaml
